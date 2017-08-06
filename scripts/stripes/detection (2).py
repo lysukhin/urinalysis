@@ -19,6 +19,7 @@ class StripeDetector:
     def __init__(self):
 
         self.src = None
+        self.blur = None
         self.gray = None
         self.gray_enh = None
         self.edges = None
@@ -34,9 +35,20 @@ class StripeDetector:
 
         self.MORPH_KERNEL_SIZE = (7, 7)
 
-    def get_gray(self, image=None):
+    def get_blur(self, image=None):
         if image is None:
             image = self.src
+        ksize = image.shape[0] / 50
+        if ksize % 2 == 0:
+            ksize += 1
+        print ksize
+        # self.blur = cv2.GaussianBlur(image, (ksize, ksize), ksize / 2)
+        # self.blur = cv2.medianBlur(image, ksize)
+        self.blur = cv2.bilateralFilter(image, d=ksize, sigmaColor=(ksize / 2), sigmaSpace=(ksize / 2))
+
+    def get_gray(self, image=None):
+        if image is None:
+            image = self.blur
         self.gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         return self.gray
 
@@ -44,6 +56,7 @@ class StripeDetector:
         if image is None:
             image = self.gray
         self.gray_enh = cv2.equalizeHist(image)
+        # self.gray_enh = image
         return self.gray_enh
 
     def get_edges(self, image=None):
@@ -57,15 +70,15 @@ class StripeDetector:
 
     def clean_edges(self, edges=None):
         if edges is None:
-            image = self.edges
+            edges = self.edges
         kernel = np.ones(self.MORPH_KERNEL_SIZE, np.uint8)
-        self.edges_clean = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
+        self.edges_clean = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
         return self.edges_clean
 
     def get_contours(self, edges=None):
         if edges is None:
-            image = self.edges_clean
-        _, self.contours, hierarchy = cv2.findContours(image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            edges = self.edges_clean
+        _, self.contours, hierarchy = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     def union_contours(self, contours=None, shape=None):
         if contours is None:
@@ -73,7 +86,7 @@ class StripeDetector:
             shape = self.edges_clean.shape
         tmp_img = np.zeros(shape)
         for j in xrange(len(contours)):
-            cv2.drawContours(tmp_img, contours, j, 255, -1)
+            cv2.drawContours(tmp_img, contours, j, 255, -2)
         tmp_img = tmp_img.astype(np.uint8)
         kernel = np.ones(self.MORPH_KERNEL_SIZE, np.uint8)
         image_filled = cv2.morphologyEx(tmp_img, cv2.MORPH_OPEN, kernel)
@@ -98,11 +111,14 @@ class StripeDetector:
     def detect(self, image):
         assert image.shape[-1] == 3, "Not a 3-channel image"
         self.src = image
+        self.get_blur()
         self.get_gray()
         self.get_gray_enh()
         self.get_edges()
         self.clean_edges()
         self.get_contours()
+        if len(self.contours) < 1:
+            raise ValueError("No contours found")
         self.union_contours()
         self.get_bound_rect()
         self.get_crop()
@@ -115,29 +131,25 @@ class StripeDetector:
             cv2.drawContours(contoured, self.contours, j, (255, 0, 0), 2)
         cv2.drawContours(contoured, [self.contour], 0, (0, 255, 0), 2)
 
-        imgs = [self.src, self.gray, self.gray_enh, self.edges, self.edges_clean,
+        imgs = [self.src, self.blur, self.gray, self.gray_enh, self.edges, self.edges_clean,
                 contoured, self.crop]
-        titles = ["Source", "Gray", "Gray HEq", "Edges", "Edges cleaned", "Contours", "Crop"]
-        cmaps = [None, "gray", "gray", "gray", "gray", "gray", None, None]
+        titles = ["Source", "Blur", "Gray", "Gray HEq", "Edges", "Edges cleaned", "Contours", "Crop"]
+        cmaps = [None, None, "gray", "gray", "gray", "gray", None, None]
 
         figure = None
         for j, (img, title, cmap) in enumerate(zip(imgs, titles, cmaps), 1):
 
-            print title, img.shape
-
-            if cmap == 'gray':
-                img = np.repeat(np.expand_dims(img, 2), 3, 2)
-
-            print img
-            img = cv2.resize(img, (600,25))
-
+            # if cmap == 'gray':
+            #     img = np.repeat(np.expand_dims(img, 2), 3, 2)
+            # img = cv2.resize(img, (25 * 24, 35))
+            #
             # if figure is None:
             #     figure = img
             # else:
-            #     figure = np.concatenate((figure, img), 1)
+            #     figure = np.concatenate((figure, img), 0)
 
-            # plt.title(title)
-            # plt.imshow(img, cmap=cmap)
-            # plt.show()
+            plt.title(title)
+            plt.imshow(img, cmap=cmap)
+            plt.show()
 
         return figure
