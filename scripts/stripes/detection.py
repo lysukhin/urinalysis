@@ -2,142 +2,214 @@
 # Pipeline for detection of a single stripe on image
 #
 # Steps:
-# 1. Make a grayscale, contrast-enhanced copy of image
-# 2. Find edges, apply morphological operations to clean up
-# 3. Find all contours of edges-image, merge them to one
-# 4. Find bounding rectangle for merged contour
-# 5. Return crop with this bounding rectangle
+# 1. Make a grayscale copy
+# 2. Blur it, apply adaptive thresholding such that stripe rectangle is easily distinguishable from background
+# 3. Find largest contour (~ our stripe)
+# 4. Find bounding rectangle for it
+# 5. Apply perspective transformation and crop
+# 6. Return crop
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+from __future__ import division
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 
 
-class StripeDetector:
+class Detector:
 
     def __init__(self):
 
-        self.src = None
-        self.gray = None
-        self.gray_enh = None
-        self.edges = None
-        self.edges_clean = None
-        self.contour = None
-        self.contours = None
-        self.brect = None
-        self.crop = None
+        # images ~ intermediate steps
+        self.image_source = None
+        self.image_binary = None
+        self.warp_matrix = None
+        self.image_warped = None
 
-        self.CANNY_THRES_LO = 50
-        self.CANNY_THRES_HI = 250
-        self.CANNY_APERTURE = 3
+        # magic numbers
+        self.height = 480
+        self.stripes_num = 20.
+        self.stripes_size = 100.
+        self.d_bil_fil = 50
+        self.sigma_x_bil_fil = 50
+        self.sigma_c_bil_fil = 25
+        self.thres_block = 100
+        self.thres_c = 0
+        self.target_rect = [0, 0, 25 * 24, 25]
 
-        self.MORPH_KERNEL_SIZE = (7, 7)
+    @staticmethod
+    def odd(x):
+        """
+        Check if x is odd, make x odd if not.
+        """
+        if x % 2 == 0:
+            x += 1
+        return x
 
-    def get_gray(self, image=None):
-        if image is None:
-            image = self.src
-        self.gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        return self.gray
+    @staticmethod
+    def resize(image, size):
+        """
+        Resize image to given size (if size is tuple) or adjust size such that image height is "size" (if size is int)
+        """
+        if isinstance(size, tuple):
+            if len(size) == 2:
+                return cv2.resize(image, size)
+            else:
+                raise ValueError("Weird size tuple")
+        elif isinstance(size, int):
+            h, w = image.shape[:2]
 
-    def get_gray_enh(self, image=None):
-        if image is None:
-            image = self.gray
-        self.gray_enh = cv2.equalizeHist(image)
-        return self.gray_enh
+            dwidth = int((1. * size / h) * w)
+            return cv2.resize(image, (dwidth, size))
 
-    def get_edges(self, image=None):
-        if image is None:
-            image = self.gray_enh
-        self.edges = cv2.Canny(image, threshold1=self.CANNY_THRES_LO,
-                               threshold2=self.CANNY_THRES_HI,
-                               apertureSize=self.CANNY_APERTURE,
-                               L2gradient=True)
-        return self.edges
-
-    def clean_edges(self, edges=None):
-        if edges is None:
-            image = self.edges
-        kernel = np.ones(self.MORPH_KERNEL_SIZE, np.uint8)
-        self.edges_clean = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
-        return self.edges_clean
-
-    def get_contours(self, edges=None):
-        if edges is None:
-            image = self.edges_clean
-        _, self.contours, hierarchy = cv2.findContours(image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    def union_contours(self, contours=None, shape=None):
-        if contours is None:
-            contours = self.contours
-            shape = self.edges_clean.shape
-        tmp_img = np.zeros(shape)
+    @staticmethod
+    def get_largest_contour_id(contours):
+        """
+        Get index of contour with max area among all contours.
+        """
+        assert len(contours) > 0, "Empty contour"
+        max_area = -1
+        max_id = -1
         for j in xrange(len(contours)):
-            cv2.drawContours(tmp_img, contours, j, 255, -1)
-        tmp_img = tmp_img.astype(np.uint8)
-        kernel = np.ones(self.MORPH_KERNEL_SIZE, np.uint8)
-        image_filled = cv2.morphologyEx(tmp_img, cv2.MORPH_OPEN, kernel)
-        __, contours, hierarchy2 = cv2.findContours(image_filled, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        self.contour = contours[0]
-        return self.contour
+            area = cv2.contourArea(contours[j])
+            if area > max_area:
+                max_area = area
+                max_id = j
+        return max_id
 
-    def get_bound_rect(self, contour=None):
-        if contour is None:
-            contour = self.contour
-        self.brect = cv2.boundingRect(contour)
-        return self.brect
+    @staticmethod
+    def get_rect(contour):
+        """
+        Get coordinates of bounding rotated rect for contour. 
+        """
+        bounding_rot_rect = cv2.minAreaRect(contour)
+        verts = cv2.boxPoints(bounding_rot_rect)
+        return verts.astype(np.uint)
 
-    def get_crop(self, image=None, brect=None):
-        if image is None:
-            image = self.src.copy()
-        if brect is None:
-            brect = self.brect
-        self.crop = image[brect[1]: brect[1] + brect[3], brect[0]: brect[0] + brect[2], :]
-        return self.crop
+    @staticmethod
+    def get_correct_arrangement(rect):
+        """
+        Find arrangment indices as follows
+        # 0 -> 1
+        # |    |
+        # 3 <- 2
+        """
+        arrangement = [-1] * 4
+        x1i, x2i, x3i, x4i = np.argsort(rect[:, 0])
+
+        if rect[x1i, 1] > rect[x2i, 1]:
+            arrangement[0] = x2i
+            arrangement[3] = x1i
+        else:
+            arrangement[0] = x1i
+            arrangement[3] = x2i
+
+        if rect[x3i, 1] > rect[x4i, 1]:
+            arrangement[1] = x4i
+            arrangement[2] = x3i
+        else:
+            arrangement[2] = x4i
+            arrangement[1] = x3i
+
+        return arrangement
+
+    def binarize(self, image):
+        """
+        Binarize image with flexible parameters.
+        """
+        # convert if necessary
+        if len(image.shape) == 3:
+            image_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        elif len(image.shape) == 2:
+            image_gray = image
+        else:
+            raise ValueError("Weird shape of image")
+
+        # get shape parameters and calculate size-dependent coefficient
+        height, width = image.shape[:2]
+        coeff = (height / self.stripes_num) / self.stripes_size
+
+        # adjust filtering parameters
+        d = self.odd(int(self.d_bil_fil * coeff))
+        sigma_x = self.odd(int(self.sigma_x_bil_fil * coeff))
+        sigma_c = self.sigma_c_bil_fil
+
+        # adjust thresholding parameters
+        block = self.odd(int(self.thres_block * coeff))
+        c = self.thres_c
+
+        # adjust morphology parameters
+        # pass
+
+        # apply
+        image_blurred = cv2.bilateralFilter(image_gray, d, sigma_c, sigma_x)
+        image_binary = cv2.adaptiveThreshold(image_blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+                                             block, c)
+
+        return image_binary
+
+    def get_homography(self, src_rect):
+        """
+        Calculate matrix for perspective warping that transforms src_rect into dist_rect.
+        """
+        # coordinates of final crop
+        dist_rect = np.array([[self.target_rect[0], self.target_rect[1]],
+                              [self.target_rect[2], self.target_rect[1]],
+                              [self.target_rect[2], self.target_rect[3]],
+                              [self.target_rect[0], self.target_rect[3]]])
+
+        # rearrange the vertices to correspond with dist_rect
+        arrangement = self.get_correct_arrangement(src_rect)
+        src_rect = src_rect[arrangement]
+
+        # add dimensiong (cv2 feature)
+        src_rect = np.expand_dims(src_rect, 1)
+        dist_rect = np.expand_dims(dist_rect, 1)
+
+        # get matrix for warp
+        h, status = cv2.findHomography(src_rect, dist_rect)
+        return h
+
+    def get_warp_matrix(self, image):
+        """
+        Find max-area contour on binarized image, fit into rotated rect and find matrix to warp it to self.target_rect
+        """
+        assert len(image.shape) == 2, "Not a grayscale image"
+
+        # get all contours, choose the one with max area
+        _, contours, __ = cv2.findContours(image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        max_id = self.get_largest_contour_id(contours)
+
+        # get vertices of bounding rotated rect
+        rect = self.get_rect(contours[max_id])
+
+        # find matrix for warp
+        h = self.get_homography(rect)
+        return h
+
+    def warp(self, image, warp_matrix):
+        """
+        Apply perspective warp to image.
+        """
+        return cv2.warpPerspective(image, warp_matrix, (self.target_rect[2], self.target_rect[3]))
 
     def detect(self, image):
-        assert image.shape[-1] == 3, "Not a 3-channel image"
-        self.src = image
-        self.get_gray()
-        self.get_gray_enh()
-        self.get_edges()
-        self.clean_edges()
-        self.get_contours()
-        self.union_contours()
-        self.get_bound_rect()
-        self.get_crop()
-        return self.crop
+        """
+        Apply complete pipeline to image.
+        """
+        # resize
+        self.image_source = self.resize(image, self.height)
 
-    def show_steps(self):
+        # binarize
+        self.image_binary = self.binarize(self.image_source)
 
-        contoured = self.src.copy()
-        for j in xrange(len(self.contours)):
-            cv2.drawContours(contoured, self.contours, j, (255, 0, 0), 2)
-        cv2.drawContours(contoured, [self.contour], 0, (0, 255, 0), 2)
+        # warp
+        self.warp_matrix = self.get_warp_matrix(self.image_binary)
+        self.image_warped = self.warp(self.image_source, self.warp_matrix)
 
-        imgs = [self.src, self.gray, self.gray_enh, self.edges, self.edges_clean,
-                contoured, self.crop]
-        titles = ["Source", "Gray", "Gray HEq", "Edges", "Edges cleaned", "Contours", "Crop"]
-        cmaps = [None, "gray", "gray", "gray", "gray", "gray", None, None]
+        # you're beatiful
+        return self.image_warped
 
-        figure = None
-        for j, (img, title, cmap) in enumerate(zip(imgs, titles, cmaps), 1):
 
-            print title, img.shape
 
-            if cmap == 'gray':
-                img = np.repeat(np.expand_dims(img, 2), 3, 2)
 
-            print img
-            img = cv2.resize(img, (600,25))
 
-            # if figure is None:
-            #     figure = img
-            # else:
-            #     figure = np.concatenate((figure, img), 1)
-
-            # plt.title(title)
-            # plt.imshow(img, cmap=cmap)
-            # plt.show()
-
-        return figure
