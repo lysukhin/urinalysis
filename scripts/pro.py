@@ -2,8 +2,6 @@ from stripes.detection import Detector
 from stripes.preprocessing import adjust_white_balance, get_pool_boxes
 from stripes.analysis import calculate_pro
 
-import matplotlib.pyplot as plt
-
 
 def pro(image):
     """
@@ -22,8 +20,6 @@ def pro(image):
 
     # Crop box from image
     pro_pool_crop = image_wb[pro_pool_box[1]: pro_pool_box[3], pro_pool_box[0]: pro_pool_box[2], :]
-    plt.imshow(pro_pool_crop, cmap='gray')
-    plt.show()
 
     # Get channels means
     red = pro_pool_crop[:, :, 0].mean()
