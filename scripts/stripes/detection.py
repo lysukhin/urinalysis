@@ -206,10 +206,8 @@ class Detector:
         self.warp_matrix = self.get_warp_matrix(self.image_binary)
         self.image_warped = self.warp(self.image_source, self.warp_matrix)
 
-        # you're beatiful
+        # you're beautiful
         return self.image_warped
-
-
 
 
 

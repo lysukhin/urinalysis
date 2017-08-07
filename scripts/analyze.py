@@ -7,7 +7,7 @@ import seaborn as sns
 import stripes.preprocessing as preproc
 # import stripes.analysis as analysis
 # import stripes.palette as palette
-from stripes.detection import StripeDetector
+from stripes.detection import Detector
 
 plt.rcParams['figure.figsize'] = (15, 5)
 sns.set_style('white')
@@ -35,10 +35,10 @@ def main():
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     # Detect strip
-    detector = StripeDetector()
+    detector = Detector()
     crop = detector.detect(image)
-    plt.imshow(detector.show_steps())
-    plt.show()
+    # plt.imshow(detector.show_steps())
+    # plt.show()
 
     # Adjust wb
     crop_wb = preproc.adjust_white_balance(crop)

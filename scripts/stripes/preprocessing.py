@@ -1,15 +1,14 @@
 import numpy as np
 
-
 # Size of details (in mm)
 STRIPE_A = 5.
 STRIPE_B = 120.
 
-GAP_WIDTH = 2.45
+GAP_WIDTH = 2.43
 POOL_WIDTH = 5.0
 
-LEFT_MARGIN = 29.7
-SIDE_MARGIN = 3.
+LEFT_MARGIN = 30.2
+SIDE_MARGIN = 4.
 
 
 def get_reference_rect(image):
@@ -62,8 +61,8 @@ def get_pool_boxes(image):
     a, b = image.shape[:2]
     k = a / STRIPE_A
 
-    boxes = np.array([[k * (LEFT_MARGIN + (POOL_WIDTH + GAP_WIDTH) * j), 0,
-                       k * (LEFT_MARGIN + (POOL_WIDTH + GAP_WIDTH) * j + POOL_WIDTH), a]
+    boxes = np.array([[k * (LEFT_MARGIN + (POOL_WIDTH + GAP_WIDTH) * j) + SIDE_MARGIN, SIDE_MARGIN,
+                       k * (LEFT_MARGIN + (POOL_WIDTH + GAP_WIDTH) * j + POOL_WIDTH) - SIDE_MARGIN, a - SIDE_MARGIN]
                       for j in xrange(12)], dtype=np.uint16)
 
     return boxes
