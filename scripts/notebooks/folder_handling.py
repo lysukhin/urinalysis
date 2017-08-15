@@ -88,6 +88,46 @@ def compress_photos(path_to_raw_images,n_downs=3):
     return path_compressed
 
 
+
+def resize_compress_photos(path_to_raw_images,
+                           compress=False,
+                           resize=False,
+                           newsize=(300,400),
+                           n_downs=3):
+
+    path_dir = os.path.dirname(path_to_raw_images)
+    path_compressed = os.path.join(path_dir,"compressed")
+
+    try:
+        os.mkdir(path_compressed)
+    except OSError:
+        print "Directory already exists"
+
+    for path_to_raw_illum_folder in get_path_contents(path_to_raw_images):
+
+        basename = os.path.basename(path_to_raw_illum_folder)
+        path_to_new_folder = os.path.join(path_compressed,basename)
+
+        try:    
+            os.mkdir(path_to_new_folder)
+        except OSError:
+            print "Directory already exists"
+
+        for img_path in get_path_contents(path_to_raw_illum_folder):
+            img = cv2.imread(img_path)
+            if resize:
+                img = cv2.resize(img,newsize)
+            if compress:
+                img = pyrDowning(img,n_downs=n_downs)
+
+            path_to_compressed_file = os.path.join(path_to_new_folder,
+                                                  os.path.basename(img_path))
+            cv2.imwrite(path_to_compressed_file,img)
+    return path_compressed
+
+
+
+
 class Illumination(object):
 
     def __init__(self):
