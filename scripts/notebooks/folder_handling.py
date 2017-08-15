@@ -94,7 +94,9 @@ def resize_compress_photos(path_to_raw_images,
                            resize=False,
                            newsize=(300,400),
                            n_downs=3):
-
+    """
+        path = "../../images/color_experiments/PRO/raw_photo"
+    """
     path_dir = os.path.dirname(path_to_raw_images)
     path_compressed = os.path.join(path_dir,"compressed")
 
@@ -126,6 +128,25 @@ def resize_compress_photos(path_to_raw_images,
     return path_compressed
 
 
+def load_images_classes(path_to_compressed):
+    """
+        path = "../../images/color_experiments/PRO/compressed"
+    """
+    exp = Experiment()
+    exp.load_images(path_to_compressed)
+    images = OrderedDict()
+    
+    print "I found following classes:"
+    for illum in sorted(exp.illuminations):
+        
+        print illum
+        if illum not in images:
+            images[illum] = [] 
+
+        for imgs in exp.illuminations[illum].images.values():
+            for img in imgs:
+                images[illum].append(img)
+    return images
 
 
 class Illumination(object):
