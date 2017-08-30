@@ -27,9 +27,10 @@ LEU_corr = {
     3: 'LARGE'
 }
 
-NIT = [
-    ((255, 255, 218), -1),
-    # TODO
+NIT_points = [
+    (255, 255, 218),
+    (255,239,206),
+    (255,206,197),
 ]
 
 NIT_units = 'a.u.'
@@ -105,8 +106,14 @@ pH_corr = {
     8.5: '8.5',
 }
 
-BLO = [
-    ((229, 190, 63), -1),
+BLO_points = [
+    (229, 190, 63),
+    (230,189,56),
+    (219,201,70),
+    (193,191,68),
+    (146,171,69),
+    (87,136,70),
+    (57,83,58), 
     # TODO
 ]
 
@@ -206,11 +213,11 @@ agents_list = ['LEU', 'NIT', 'URO', 'PRO', 'pH', 'BLO', 'SG', 'KET', 'BIL', 'GLU
 
 points_dict = {
     'LEU': LEU_points,
-    # 'NIT': NIT_points,
+     'NIT': NIT_points,
     'URO': URO_points,
     'PRO': PRO_points,
     'pH': pH_points,
-    # 'BLO': BLO_points,
+     'BLO': BLO_points,
     'SG': SG_points,
     'KET': KET_points,
     'BIL': BIL_points,
@@ -219,11 +226,11 @@ points_dict = {
 
 targets_dict = {
     'LEU': LEU_target,
-    # 'NIT': NIT_target,
+     #'NIT': NIT_target,
     'URO': URO_target,
     'PRO': PRO_target,
     'pH': pH_target,
-    # 'BLO': BLO_target,
+     #'BLO': BLO_target,
     'SG': SG_target,
     'KET': KET_target,
     'BIL': BIL_target,
