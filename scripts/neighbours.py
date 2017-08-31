@@ -44,7 +44,7 @@ def one_nearest_neighbor(train_images,test_img,verbose=False,
     
     - predicted_class of type class
     
-    - or predicted_class, list_of_probabilities of return_probabilities == True
+    - or predicted_class, list_of_probabilities if return_probabilities == True
     
     
     ---------------------
