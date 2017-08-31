@@ -33,11 +33,14 @@ NIT_points = [
     (255,206,197),
 ]
 
+NIT_target = [-1, 0, 1]
+
 NIT_units = 'a.u.'
 
 NIT_corr = {
     -1: 'NEGATIVE',
-    1: 'POSITIVE'
+    0: 'POSITIVE',
+    1: 'POSITIVE',
 }
 
 URO_points = [
@@ -114,13 +117,21 @@ BLO_points = [
     (146,171,69),
     (87,136,70),
     (57,83,58), 
-    # TODO
 ]
 
 BLO_units = 'a.u.'
 
-# TODO
-# BLO_corr =
+BLO_target = [-1, 0, 1, 2, 3, 4, 5]
+
+BLO_corr = {
+    -1: "NEGATIVE NON-HEMOLYZED",
+    0: "TRACE NON-HEMOLYZED",
+    1: "MODERATE NON-HEMOLYZED",
+    2: "TRACE HEMOLYZED",
+    3: "SMALL HEMOLYZED",
+    4: "MODERATE HEMOLYZED",
+    5: "LARGE HEMOLYZED"
+}
 
 
 SG_points = [
@@ -187,7 +198,7 @@ BIL_corr = {
     3: 'LARGE'
 }
 
-GLU = [
+GLU_points = [
     (144, 208, 182),
     (140, 196, 135),
     (123, 176, 86),
@@ -213,24 +224,24 @@ agents_list = ['LEU', 'NIT', 'URO', 'PRO', 'pH', 'BLO', 'SG', 'KET', 'BIL', 'GLU
 
 points_dict = {
     'LEU': LEU_points,
-     'NIT': NIT_points,
+    'NIT': NIT_points,
     'URO': URO_points,
     'PRO': PRO_points,
     'pH': pH_points,
-     'BLO': BLO_points,
+    'BLO': BLO_points,
     'SG': SG_points,
     'KET': KET_points,
     'BIL': BIL_points,
-    'GLU': GLU
+    'GLU': GLU_points,
 }
 
 targets_dict = {
     'LEU': LEU_target,
-     #'NIT': NIT_target,
+    'NIT': NIT_target,
     'URO': URO_target,
     'PRO': PRO_target,
     'pH': pH_target,
-     #'BLO': BLO_target,
+    'BLO': BLO_target,
     'SG': SG_target,
     'KET': KET_target,
     'BIL': BIL_target,
@@ -256,7 +267,7 @@ corr_dict = {
     'URO': URO_corr,
     'PRO': PRO_corr,
     'pH': pH_corr,
-    # 'BLO' : BLO_corr,
+    'BLO' : BLO_corr,
     'SG': SG_corr,
     'KET': KET_corr,
     'BIL': BIL_corr,
