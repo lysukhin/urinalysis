@@ -220,14 +220,14 @@ GLU_corr = {
     2000: '2000'
 }
 
-agents_list = ['LEU', 'NIT', 'URO', 'PRO', 'pH', 'BLO', 'SG', 'KET', 'BIL', 'GLU'][::-1]
+agents_list = ['LEU', 'NIT', 'URO', 'PRO', 'PH', 'BLO', 'SG', 'KET', 'BIL', 'GLU'][::-1]
 
 points_dict = {
     'LEU': LEU_points,
     'NIT': NIT_points,
     'URO': URO_points,
     'PRO': PRO_points,
-    'pH': pH_points,
+    'PH': pH_points,
     'BLO': BLO_points,
     'SG': SG_points,
     'KET': KET_points,
@@ -240,7 +240,7 @@ targets_dict = {
     'NIT': NIT_target,
     'URO': URO_target,
     'PRO': PRO_target,
-    'pH': pH_target,
+    'PH': pH_target,
     'BLO': BLO_target,
     'SG': SG_target,
     'KET': KET_target,
@@ -253,7 +253,7 @@ units_dict = {
     'NIT': NIT_units,
     'URO': URO_units,
     'PRO': PRO_units,
-    'pH': pH_units,
+    'PH': pH_units,
     'BLO': BLO_units,
     'SG': SG_units,
     'KET': KET_units,
@@ -266,7 +266,7 @@ corr_dict = {
     'NIT': NIT_corr,
     'URO': URO_corr,
     'PRO': PRO_corr,
-    'pH': pH_corr,
+    'PH': pH_corr,
     'BLO' : BLO_corr,
     'SG': SG_corr,
     'KET': KET_corr,
