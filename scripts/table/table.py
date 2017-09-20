@@ -151,13 +151,13 @@ class Table:
             arrangement[1] = x3i
         return arrangement
 
-    def _check_contour_(self, contour, eps_area, eps_cos=None):
+    @staticmethod
+    def _check_contour_(contour, eps_area, eps_cos=None):
         if cv2.contourArea(contour) < eps_area:
-            return False
-        approx = self._approximate_contour_(contour)
-        if not cv2.isContourConvex(approx):
-            return False
-
+            return False  # contour too small
+        x, y, w, h = cv2.boundingRect(contour)
+        if max(w, h) / min(w, h) > 100:
+            return False  # contour too narrow
         # TODO: Similarity to rectangle (for all angles abs(cos) < eps_cos)
         return True
 
@@ -178,7 +178,7 @@ class Table:
 
     # private methods for object detection:
 
-    def _detect_template_(self, image):
+    def _detect_template_(self, image, return_binary=False):
         """
         Detect white 4-vertices white polygon on :image:, return its warp-perspective transformed copy.
         """
@@ -205,6 +205,8 @@ class Table:
                               [[0, self.h_template_px]]])
         warp_matrix = self._get_warp_matrix_(np.expand_dims(src_rect, 1), dist_rect)
         template = self._warp_(image, warp_matrix, dist_shape=(self.w_template_px, self.h_template_px))
+        if return_binary:
+            return template, image_morph
         return template
 
     def _detect_roi_(self, template):
@@ -233,7 +235,7 @@ class Table:
         roi = self._warp_(template, warp_matrix, dist_shape=(self.w_roi_px, self.h_roi_px))
         return roi
 
-    def _detect_strip_(self, roi):
+    def _detect_strip_(self, roi, return_binary=False):
         """
         Detect strip rectangle inside :roi: and return its warp-perspective transformed copy.
         """
@@ -244,18 +246,20 @@ class Table:
         strip_rect = roi[self.coords_roi_px['strip'][0][1]: self.coords_roi_px['strip'][1][1],
                          self.coords_roi_px['strip'][0][0]: self.coords_roi_px['strip'][1][0], :]
         strip_rect_denoised = self._denoise_(strip_rect, ksize=9)
-        strip_rect_binary = self._binarize_(strip_rect_denoised, blocksize=9)
+        # strip_rect_binary = self._binarize_(strip_rect_denoised, blocksize=101, c=0)
+        strip_rect_binary = self._binarize_(strip_rect_denoised, blocksize=strip_rect.shape[1] / 5, c=0)
         strip_rect_morph = self._denoise_(strip_rect_binary, ksize=3)
         strip_rect_morph = self._denoise_(strip_rect_morph, ksize=3)
-        strip_rect_morph = self._morphology_close_(strip_rect_morph, ksize=3)
+        # strip_rect_morph = self._morphology_close_(strip_rect_morph, ksize=3)
 
         r, contours, h = cv2.findContours(strip_rect_morph, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         max_id = self._get_max_area_contour_id_(contours)
-        max_contour = contours[max_id]
-        good_contours = [max_contour]
+        # max_contour = contours[max_id]
+        # good_contours = [max_contour]
+        good_contours = []
 
         for cont in contours:
-            if self._check_contour_(cont, eps_area=100):
+            if self._check_contour_(contour=cont, eps_area=((strip_rect.shape[0] / 3) ** 2)):
                 good_contours.append(cont)
         contour = reduce(lambda x, y: np.concatenate((x, y)), good_contours)
         poly = self._approximate_contour_(contour, eps=2 * 1e-3, closed=False)
@@ -272,6 +276,8 @@ class Table:
 
         warp_matrix = self._get_warp_matrix_(src_rect, dist_rect)
         strip = self._warp_(strip_rect, warp_matrix, dist_shape=(self.w_strip_px, self.h_strip_px))
+        if return_binary:
+            return strip, strip_rect_morph
         return strip
 
     # private methods for reading colors:
@@ -282,9 +288,9 @@ class Table:
         elif self.coords_roi_px is None:
             raise ValueError("No coordinate data found")
         else:
-            self.palette = {key: roi[rect[0][1]: rect[1][1], rect[0][0]: rect[1][0], :] for key, rect in
-                            self.coords_roi_px.iteritems()}
-        return self.palette
+            palette = {key: roi[rect[0][1]: rect[1][1], rect[0][0]: rect[1][0], :] for key, rect in
+                       self.coords_roi_px.iteritems()}
+        return palette
 
     def _read_colorbar_(self, strip):
         if strip is None:
@@ -292,9 +298,9 @@ class Table:
         elif self.coords_strip_px is None:
             raise ValueError("No coordinate data found")
         else:
-            self.colorbar = {key: strip[rect[0][1]: rect[1][1], rect[0][0]: rect[1][0], :] for key, rect in
-                             self.coords_strip_px.iteritems()}
-        return self.colorbar
+            colorbar = {key: strip[rect[0][1]: rect[1][1], rect[0][0]: rect[1][0], :] for key, rect in
+                        self.coords_strip_px.iteritems()}
+        return colorbar
 
     # public methods
 
@@ -312,6 +318,7 @@ class Table:
         self.roi = self._detect_roi_(self.template)
         self.strip = self._detect_strip_(self.roi)
 
-        self._read_colorbar_(self.strip)
-        self._read_palette_(self.roi)
+        self.colorbar = self._read_colorbar_(self.strip)
+        self.palette = self._read_palette_(self.roi)
+
         return self
