@@ -1,0 +1,23 @@
+ID,URO,BLO,BIL,KET,LEU,GLU,PRO,PH,NIT,SG,Stripe,Device
+check_1,2,0,0,3,3,0,1,5,0,4,Sysmex,Sysmex
+check_2,0,5,2,0,0,3,3,2,2,3,Sysmex,Sysmex
+30305842,0,4,0,0,0,0,0,1,0,3,Sysmex,Sysmex
+30305691,0,0,0,0,1,0,1,2,0,4,Sysmex,Sysmex
+30305695,1,0,0,0,0,0,0,2,0,4,Sysmex,Sysmex
+10114450,1,0,0,2,0,0,1,6,0,5,Sysmex,Sysmex
+10115025,0,0,0,1,0,0,2,1,0,6,Sysmex,Sysmex
+10114975,0,0,0,2,0,0,1,0,0,5,Sysmex,Sysmex
+Check 1,0,0,0,2,0,0,0,3,0,3,Contec,chinese_device
+Check 2,0,0,2,0,0,5,3,1,0,4,Contec,chinese_device
+30305842,0,0,0,0,0,0,0,1,0,6,Contec,chinese_device
+30305691,0,0,0,0,0,0,0,1,0,6,Contec,chinese_device
+30305695,0,0,0,0,0,0,0,1,0,6,Contec,chinese_device
+10114450,0,0,1,3,0,0,0,5,0,3,Contec,chinese_device
+10115025,0,0,1,0,0,0,0,1,0,6,Contec,chinese_device
+10114975,0,0,0,0,0,0,0,1,0,6,Contec,chinese_device
+30305842,0,4,2,0,0,0,0,1,0,3,Contec,eye
+30305691,0,0,2,0,0,0,1,1,0,6,Contec,eye
+30305695,1,0,2,0,0,0,1,1,0,6,Contec,eye
+10114450,1,0,0,3,0,0,1,5,0,3,Contec,eye
+10115025,0,0,0,0,0,0,1,1,0,6,Contec,eye
+10114975,0,0,0,2,0,0,0,1,0,6,Contec,eye
