@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 
 class Table:
     def __init__(self, scale, w_template_mm, h_template_mm, w_roi_mm, h_roi_mm,
-                 w_strip_mm, h_strip_mm, coords_roi_mm, coords_strip_mm):
+                 w_strip_mm, h_strip_mm, coords_roi_mm, coords_strip_mm,
+                 descriptor=cv2.AKAZE_create(), matcher_type=cv2.DESCRIPTOR_MATCHER_BRUTEFORCE_HAMMING):
         """
         Initialize Table class instance with following parameters:
         :param scale: 			# scaling factor for mm->pixels conversion
@@ -18,6 +19,8 @@ class Table:
         :param h_strip_mm:		# size of strip (height)
         :param coords_roi_mm:	# dict of calibration pools coordinates (in mm) (on roi)
         :param coords_strip_mm:	# dict of calibration pools coordinates (in mm) (on strip)
+        :param descriptor: # initializer for keypoints and descriptors extractor 
+        :param matcher_type:    # type of matcher passed to cv2.DescriptorMatcher_create()
         """
         self.scale = scale
         self.w_template_mm = w_template_mm
@@ -28,6 +31,8 @@ class Table:
         self.h_strip_mm = h_strip_mm
         self.coords_roi_mm = coords_roi_mm
         self.coords_strip_mm = coords_strip_mm
+        self.descriptor = descriptor
+        self.matcher = cv2.DescriptorMatcher_create(matcher_type)
 
         self.template = None  # picture of whole template
         self.roi = None  # picture of ROI (no borders)
@@ -37,7 +42,7 @@ class Table:
 
         self.coords_roi_px = {}  # dict of calibration pools coordinates (in px) (on roi)
         self.coords_strip_px = {}  # dict of calibration pools coordinates (in px) (on strip)
-        self._rescale_coords_()
+        self._rescale_coords_()  # rescale coordinates from mm to px
 
     def _rescale_coords_(self):
         """
@@ -122,14 +127,6 @@ class Table:
     # methods for contours handling:
 
     @staticmethod
-    def iou(mask1, mask2):
-        """Intersection over union: (m1 ^ m2) / (m1 + m2)"""
-        assert mask1.shape == mask2.shape, "Shapes mismatch: {} != {}".format(mask1.shape, mask2.shape)
-        intersection = np.sum(np.logical_and(mask1, mask2), axis=(0, 1))
-        union = np.sum(np.logical_or(mask1, mask2), axis=(0, 1))
-        return intersection / union
-
-    @staticmethod
     def get_max_area_contour_id(contours):
         max_area = 0.
         max_contour_id = -1
@@ -167,21 +164,49 @@ class Table:
         return arrangement
 
     @staticmethod
-    def check_contour(contour, eps_area, eps_cos=None):
+    def check_contour(contour, eps_area):
         if cv2.contourArea(contour) < eps_area:
             return False  # contour too small
         x, y, w, h = cv2.boundingRect(contour)
         if max(w, h) / min(w, h) > 100:
             return False  # contour too narrow
-        # TODO: Similarity to rectangle (for all angles abs(cos) < eps_cos)
         return True
 
-    # private methods for image transforming:
+    # methods for keypoint detection and matching
+
+    def _get_keypoints_and_descriptors_(self, image):
+        if self.descriptor is None:
+            raise AttributeError("No descriptor class instantiated")
+        keypoints, descriptors = self.descriptor.detectAndCompute(image, mask=None)
+        return keypoints, descriptors
+
+    def _get_good_matches_(self, descriptors1, descriptors2, matching_coeff=0.25):
+        if self.descriptor is None:
+            raise AttributeError("No matcher class instantiated")
+        matches = self.matcher.knnMatch(descriptors1, descriptors2, k=2)
+        good_matches = []
+        for m, n in matches:
+            if m.distance < matching_coeff * n.distance:
+                good_matches.append(m)
+        return good_matches
+
+    def _get_keypoints_matches_(self, keypoints1, keypoints2, good_matches):
+        """
+        :param keypoints1: query keypoints 
+        :param keypoints2: scene keypoints
+        :param good_matches: 
+        :return: 
+        """
+        dst_pts = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        src_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        return src_pts, dst_pts
+
+    # methods for image transforming:
 
     @staticmethod
     def get_warp_matrix(src_rect, dist_rect):
         assert src_rect.shape == dist_rect.shape, "Shapes mismatch: {} != {}".format(src_rect.shape, dist_rect.shape)
-        h, status = cv2.findHomography(src_rect, dist_rect)
+        h, status = cv2.findHomography(src_rect, dist_rect, cv2.RANSAC)#, 5.0)
         return h
 
     @staticmethod
@@ -201,32 +226,54 @@ class Table:
             raise AttributeError("No image to detect template on")
 
         image_denoised = self.denoise(image)
-        image_binary = self.binarize(image_denoised)
-        image_morph = self.morphology_open(image_binary)
-
+        image_binary = self.binarize(image_denoised, blocksize=self.odd(image.shape[1] // 5))
+        image_morph = self.morphology_open(image_binary, ksize=self.odd(image.shape[1] // 250))
+        if return_binary:
+            return image_morph
         r, contours, h = cv2.findContours(image_morph, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         max_id = self.get_max_area_contour_id(contours)
         contour = contours[max_id]
         poly = None
-        for eps in [1e-4, 5 * 1e-4, 1e-3, 5 * 1e-3, 1e-2][::-1]:
+        for eps in [1e-4, 5 * 1e-4, 1e-3, 5 * 1e-3, 1e-2]:
             poly_eps = self.approximate_contour(contour, eps=eps)
             if poly_eps.shape[0] == 4:
                 poly = poly_eps.copy()
         if poly is None:
-            raise RuntimeError("Failed to approx roi with 4 points")
+            raise RuntimeError("Failed to approx template with 4 points")
 
         correct_arrangement = self.get_correct_arrangement(np.squeeze(poly, 1))
-        src_rect = np.squeeze(poly, 1)[correct_arrangement]
-        dist_rect = np.array([[[0, 0]],
-                              [[self.w_template_px, 0]],
-                              [[self.w_template_px, self.h_template_px]],
-                              [[0, self.h_template_px]]])
-        warp_matrix = self.get_warp_matrix(np.expand_dims(src_rect, 1), dist_rect)
-        template = self.warp(image, warp_matrix, dist_shape=(self.w_template_px, self.h_template_px))
-        if return_binary:
-            return template, image_morph
+        src_pts_verts = poly[correct_arrangement]
+        dst_pts_verts = np.array([[[0, 0]],
+                                  [[self.w_template_px, 0]],
+                                  [[self.w_template_px, self.h_template_px]],
+                                  [[0, self.h_template_px]]])
+
+        # keypoints stuff
+        if self.descriptor is not None:
+            reference_template = cv2.imread("/data/Y.Disk/work/urinalysis/scripts/table/template.png",
+                                            cv2.IMREAD_COLOR)
+            reference_template = cv2.cvtColor(cv2.resize(reference_template, (self.w_template_px, self.h_template_px)),
+                                              cv2.COLOR_BGR2RGB)
+
+            keypoints_query, descriptors_query = self._get_keypoints_and_descriptors_(reference_template)
+            keypoints_scene, descriptors_scene = self._get_keypoints_and_descriptors_(image)
+            good_matches = self._get_good_matches_(descriptors_query, descriptors_scene)
+            src_pts_kp, dst_pts_kp = self._get_keypoints_matches_(keypoints_query, keypoints_scene, good_matches)
+            src_pts = np.concatenate((src_pts_verts, src_pts_kp), axis=0)
+            dst_pts = np.concatenate((dst_pts_verts, dst_pts_kp), axis=0)
+            # for pt in src_pts:
+            #     cv2.circle(image, tuple(pt.astype(np.int).ravel().tolist()), 6, (0, 255, 255), -1)
+            # cv2.drawKeypoints(reference_template, keypoints_query, reference_template)
         else:
-            return template
+            src_pts = src_pts_verts
+            dst_pts = dst_pts_verts
+
+        warp_matrix = self.get_warp_matrix(src_pts, dst_pts)
+        template = self.warp(image, warp_matrix, dist_shape=(self.w_template_px, self.h_template_px))
+        # if return_binary:
+        #     return template, image_morph
+        # else:
+        return template
 
     def _detect_roi_(self, template, return_contour=False):
         """
@@ -247,13 +294,35 @@ class Table:
             raise RuntimeError("Failed to approx roi with 4 points")
 
         correct_arrangement = self.get_correct_arrangement(np.squeeze(poly, 1))
-        src_rect = np.squeeze(poly, 1)[correct_arrangement]
-        dist_rect = np.array([[[0, 0]],
-                              [[self.w_roi_px, 0]],
-                              [[self.w_roi_px, self.h_roi_px]],
-                              [[0, self.h_roi_px]]])
-        warp_matrix = self.get_warp_matrix(np.expand_dims(src_rect, 1), dist_rect)
+        src_pts_verts = poly[correct_arrangement]
+        dst_pts_verts = np.array([[[0, 0]],
+                                  [[self.w_roi_px, 0]],
+                                  [[self.w_roi_px, self.h_roi_px]],
+                                  [[0, self.h_roi_px]]])
+
+        # keypoints stuff
+        if self.descriptor is not None:
+            reference_roi = cv2.imread("/data/Y.Disk/work/urinalysis/scripts/table/roi.png",
+                                       cv2.IMREAD_COLOR)
+            reference_roi = cv2.cvtColor(cv2.resize(reference_roi, (self.w_roi_px, self.h_roi_px)),
+                                         cv2.COLOR_BGR2RGB)
+
+            keypoints_query, descriptors_query = self._get_keypoints_and_descriptors_(reference_roi)
+            keypoints_scene, descriptors_scene = self._get_keypoints_and_descriptors_(template)
+            good_matches = self._get_good_matches_(descriptors_query, descriptors_scene)
+            src_pts_kp, dst_pts_kp = self._get_keypoints_matches_(keypoints_query, keypoints_scene, good_matches)
+            src_pts = np.concatenate((src_pts_verts, src_pts_kp), axis=0)
+            dst_pts = np.concatenate((dst_pts_verts, dst_pts_kp), axis=0)
+            # for pt in src_pts:
+            #     cv2.circle(template, tuple(pt.astype(np.int).ravel().tolist()), 6, (0, 255, 255), -1)
+            # cv2.drawKeypoints(reference_roi, keypoints_query, reference_roi)
+        else:
+            src_pts = src_pts_verts
+            dst_pts = dst_pts_verts
+
+        warp_matrix = self.get_warp_matrix(src_pts, dst_pts)
         roi = self.warp(template, warp_matrix, dist_shape=(self.w_roi_px, self.h_roi_px))
+
         if return_contour:
             contoured = template.copy()
             cv2.drawContours(contoured, [poly], 0, (255, 255, 255), 2)
@@ -271,7 +340,6 @@ class Table:
         strip_rect = roi[self.coords_roi_px['strip'][0][1]: self.coords_roi_px['strip'][1][1],
                          self.coords_roi_px['strip'][0][0]: self.coords_roi_px['strip'][1][0], :]
         strip_rect_denoised = self.denoise(strip_rect, ksize=9)
-        # strip_rect_binary = self.binarize(strip_rect_denoised, blocksize=101, c=0)
         strip_rect_binary = self.binarize(strip_rect_denoised, blocksize=self.odd(strip_rect.shape[1] // 5), c=0)
         strip_rect_morph = self.denoise(strip_rect_binary, ksize=5)
         strip_rect_morph = self.denoise(strip_rect_morph, ksize=5)
@@ -286,30 +354,7 @@ class Table:
             if self.check_contour(contour=cont, eps_area=((strip_rect.shape[0] / 4) ** 2)):
                 good_contours.append(cont)
         contour = reduce(lambda x, y: np.concatenate((x, y)), good_contours)
-        # hull = cv2.convexHull(contour, returnPoints=True)
 
-        # poly = None
-        # good_polys = []
-        # for eps in [1e-4, 5 * 1e-4, 1e-3, 5 * 1e-3, 1e-2][::-1]:
-        #     poly_eps = self.approximate_contour(hull, eps=eps)
-        #     if poly_eps.shape[0] == 4:
-        #         good_polys.append(poly_eps)
-        # if len(good_polys) == 0:
-        #     raise RuntimeError("Failed to approx strip with 4 points")
-
-        # poly_id = 0
-        # max_iou = -1
-        # for j, good_poly in enumerate(good_polys):
-            # good_poly_mask = np.zeros_like(strip_rect_morph)
-            # cv2.drawContours(good_poly_mask, [good_poly], 0, (255, 255, 255), -1)
-            # good_poly_iou = self.iou(strip_rect_morph, good_poly_mask)
-            # if good_poly_iou > max_iou:
-            #     print good_poly_iou
-            #     poly_id = j
-                # max_iou = good_poly_iou
-        # poly = good_polys[poly_id]
-
-        # rotated_rect = cv2.minAreaRect(poly)
         rotated_rect = cv2.minAreaRect(contour)
         src_points = cv2.boxPoints(rotated_rect).astype(np.int)
         correct_arrangement = self.get_correct_arrangement(src_points)
@@ -321,17 +366,13 @@ class Table:
         warp_matrix = self.get_warp_matrix(np.expand_dims(src_rect, 1), dist_rect)
 
         strip = self.warp(strip_rect, warp_matrix, dist_shape=(self.w_strip_px, self.h_strip_px))
-        output = [strip]
-        if return_binary:
-            output.append(strip_rect_morph)
-        if return_poly:
-            output.append(src_points)
-        if return_contour:
-            output.append(contour)
-
-                # return strip, strip_rect_morph
-        # else:
-        #     return strip
+        output = strip
+        # if return_binary:
+        #     output.append(strip_rect_morph)
+        # if return_poly:
+        #     output.append(src_points)
+        # if return_contour:
+        #     output.append(contour)
         return output
 
     # private methods for reading colors:
