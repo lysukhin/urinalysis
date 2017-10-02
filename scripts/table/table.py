@@ -1,7 +1,6 @@
 from __future__ import division
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 class Table:
@@ -72,12 +71,17 @@ class Table:
 
     @staticmethod
     def odd(x):
+        """
+        Make :x: odd if needed.
+        :return: int
+        """
         return x + int(x % 2 == 0)
 
     @staticmethod
     def pyr_down(image, n=1):
         """
         pyrDown :image: :n: times.
+        :return shrinked: np.ndarray (image) 
         """
         if n <= 1:
             return image
@@ -88,39 +92,60 @@ class Table:
 
     def _downsample_(self, image, to_size=960):
         """
-        Resize image such that larger side is of :to_size: scale.
+        Resize :image: such that larger side is of :to_size: scale.
+        :return: np.ndarray (image)
         """
         n = int(np.log2(max(image.shape) / to_size))
         return self.pyr_down(image, n=n)
 
     @staticmethod
     def contrast(image):
+        """
+        Equalize histogram of the :image:.
+        :return: np.ndarray (image)
+        """
         if len(image.shape) == 2:
             return cv2.equalizeHist(image)
         else:
             return cv2.cvtColor(cv2.equalizeHist(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)), cv2.COLOR_GRAY2RGB)
 
     @staticmethod
-    def denoise(image, ksize=15):
-        return cv2.medianBlur(image, ksize=ksize)
+    def denoise(image, ksize=15, kind="median"):
+        """
+        Apply blurring of :kind: to :image: with predefined kernel of :ksize:.
+        :return: np.ndarray (image)
+        """
+        if kind == "median":
+            return cv2.medianBlur(image, ksize=ksize)
 
     @staticmethod
     def binarize(image, blocksize=11, c=0):
+        """
+        Apply adaptive thresholding to :image:.
+        :return: np.ndarray  (image)
+        """
         if len(image.shape) == 2:
-            out = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
-                                        blockSize=blocksize, C=c)
+            return cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+                                         blockSize=blocksize, C=c)
         else:
-            out = cv2.adaptiveThreshold(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                        cv2.THRESH_BINARY, blockSize=blocksize, C=c)
-        return out
+            return cv2.adaptiveThreshold(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                         cv2.THRESH_BINARY, blockSize=blocksize, C=c)
 
     @staticmethod
     def morphology_open(image, ksize=3):
+        """
+        Wrapper function for morphological opening with :ksize:.
+        :return: np.ndarray (image)
+        """
         kernel = np.ones(ksize)
         return cv2.morphologyEx(image, cv2.MORPH_OPEN, kernel)
 
     @staticmethod
     def morphology_close(image, ksize=3):
+        """
+        Wrapper function for morphological closing with :ksize:.
+        :return: np.ndarray (image)
+        """
         kernel = np.ones(ksize)
         return cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
 
@@ -128,8 +153,12 @@ class Table:
 
     @staticmethod
     def get_max_area_contour_id(contours):
-        max_area = 0.
-        max_contour_id = -1
+        """
+        Return id of the contour with max area amongst :contours:.
+        :return max_contour_id: int
+        """
+        max_area = -1
+        max_contour_id = 0
         for j, contour in enumerate(contours):
             new_area = cv2.contourArea(contour)
             if new_area >= max_area:
@@ -139,12 +168,17 @@ class Table:
 
     @staticmethod
     def approximate_contour(contour, eps=5 * 1e-3, closed=True):
+        """
+        Approximate contour with polygon of :eps: accuracy.
+        :return: np.ndarray (points)
+        """
         return cv2.approxPolyDP(contour, epsilon=eps * cv2.arcLength(contour, closed=closed), closed=closed)
 
     @staticmethod
     def get_correct_arrangement(rect):
         """
-        Find arrangment indices of :rect:-vertices as follows (clockwise, from top-left): 0 -> 1 -> 2 -> 3
+        Find arrangment indices of :rect:-vertices as follows (clockwise, from top-left): 0 -> 1 -> 2 -> 3.
+        :return arrangement: 4-list of np.array (points)
         """
         arrangement = [-1] * 4
         rect = np.array(rect)
@@ -165,6 +199,11 @@ class Table:
 
     @staticmethod
     def check_contour(contour, eps_area):
+        """
+        Check if :contour: is good for being a part of strip.
+        :param eps_area: min area of a good contour
+        :return: bool 
+        """
         if cv2.contourArea(contour) < eps_area:
             return False  # contour too small
         x, y, w, h = cv2.boundingRect(contour)
@@ -175,12 +214,23 @@ class Table:
     # methods for keypoint detection and matching
 
     def _get_keypoints_and_descriptors_(self, image):
+        """
+        Detect and compute keypoints and descriptors of :image: using self.descriptor
+        :return (keypoints, descriptors): 
+        """
         if self.descriptor is None:
             raise AttributeError("No descriptor class instantiated")
         keypoints, descriptors = self.descriptor.detectAndCompute(image, mask=None)
         return keypoints, descriptors
 
     def _get_good_matches_(self, descriptors1, descriptors2, matching_coeff=0.25):
+        """
+        Compare two sets of :descriptors: and return list of good matches.
+        :param descriptors1: 
+        :param descriptors2: 
+        :param matching_coeff: Lowe's ratio coefficient
+        :return good_matches: list
+        """
         if self.descriptor is None:
             raise AttributeError("No matcher class instantiated")
         matches = self.matcher.knnMatch(descriptors1, descriptors2, k=2)
@@ -192,10 +242,11 @@ class Table:
 
     def _get_keypoints_matches_(self, keypoints1, keypoints2, good_matches):
         """
+        Return correspondence between two sets of :keypoints: according to :good_matches: list.
         :param keypoints1: query keypoints 
         :param keypoints2: scene keypoints
         :param good_matches: 
-        :return: 
+        :return src_pts, dst_pts: np.ndarray, np.ndarray (points) 
         """
         dst_pts = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         src_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
@@ -204,23 +255,33 @@ class Table:
     # methods for image transforming:
 
     @staticmethod
-    def get_warp_matrix(src_rect, dist_rect):
-        assert src_rect.shape == dist_rect.shape, "Shapes mismatch: {} != {}".format(src_rect.shape, dist_rect.shape)
-        h, status = cv2.findHomography(src_rect, dist_rect, cv2.RANSAC)#, 5.0)
+    def get_warp_matrix(src_pts, dst_pts):
+        """
+        Calculate matrix for :src_rect: -> :dist_rect: transformation
+        :param src_pts: 
+        :param dst_pts: 
+        :return h: np.ndarray  
+        """
+        assert src_pts.shape == dst_pts.shape, "Shapes mismatch: {} != {}".format(src_pts.shape, dst_pts.shape)
+        h, status = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC)  # , 5.0)
         return h
 
     @staticmethod
     def warp(image, warp_matrix, dist_shape=None):
+        """
+        Apply transformation of :image: using :warp_matrix:.
+        :return: np.ndarray (image) 
+        """
         if dist_shape is None:
             dist_shape = image.shape[:2]
-        warped = cv2.warpPerspective(src=image, M=warp_matrix, dsize=dist_shape)
-        return warped
+        return cv2.warpPerspective(src=image, M=warp_matrix, dsize=dist_shape)
 
     # private methods for object detection:
 
     def _detect_template_(self, image, return_binary=False):
         """
         Detect white 4-vertices white polygon on :image:, return its warp-perspective transformed copy.
+        :return templae: np.ndarray (image)
         """
         if image is None:
             raise AttributeError("No image to detect template on")
@@ -270,14 +331,12 @@ class Table:
 
         warp_matrix = self.get_warp_matrix(src_pts, dst_pts)
         template = self.warp(image, warp_matrix, dist_shape=(self.w_template_px, self.h_template_px))
-        # if return_binary:
-        #     return template, image_morph
-        # else:
         return template
 
     def _detect_roi_(self, template, return_contour=False):
         """
         Detect rectangle inside :template: and return its warp-perspective transformed copy.
+        :return roi: np.ndarray (image)
         """
         if template is None:
             raise AttributeError("No template to detect ROI on")
@@ -333,12 +392,13 @@ class Table:
     def _detect_strip_(self, roi, return_binary=False, return_poly=False, return_contour=False):
         """
         Detect strip rectangle inside :roi: and return its warp-perspective transformed copy.
+        :return strip: np.ndarray (image)
         """
         if roi is None:
             raise AttributeError("No ROI to detect strip on")
 
         strip_rect = roi[self.coords_roi_px['strip'][0][1]: self.coords_roi_px['strip'][1][1],
-                         self.coords_roi_px['strip'][0][0]: self.coords_roi_px['strip'][1][0], :]
+                     self.coords_roi_px['strip'][0][0]: self.coords_roi_px['strip'][1][0], :]
         strip_rect_denoised = self.denoise(strip_rect, ksize=9)
         strip_rect_binary = self.binarize(strip_rect_denoised, blocksize=self.odd(strip_rect.shape[1] // 5), c=0)
         strip_rect_morph = self.denoise(strip_rect_binary, ksize=5)
@@ -378,6 +438,10 @@ class Table:
     # private methods for reading colors:
 
     def _read_palette_(self, roi):
+        """
+        Read calibration colors from :roi:.
+        :return palette: dict of entries ("TYPE_NUM", np.ndarray (image))
+        """
         if roi is None:
             raise AttributeError("No template found")
         elif self.coords_roi_px is None:
@@ -388,6 +452,10 @@ class Table:
         return palette
 
     def _read_colorbar_(self, strip):
+        """
+        Read test colors from :strip:.
+        :return colorbar: dict of entries ("TYPE", np.ndarray (image))
+        """
         if strip is None:
             raise AttributeError("No strip found")
         elif self.coords_strip_px is None:
