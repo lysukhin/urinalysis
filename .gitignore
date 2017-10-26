@@ -2,5 +2,5 @@
 .idea
 scripts/.idea
 *.idea
-images/calibration
-images/
+images/*
+!images/crops
